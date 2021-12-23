@@ -21,6 +21,7 @@ interface Config {
   server: string;
   serverport: number;
   serverid: number;
+  serverpath: string;
 
   nickname: string;
   avatar?: string;
@@ -32,6 +33,9 @@ interface Config {
   rating?: number;
   deadline?: string;
   cutoff?: number;
+
+  open: string;
+  close: string;
 }
 
 interface Battle {
@@ -51,9 +55,8 @@ interface LeaderboardEntry {
   name: string;
   rank?: number;
   elo: number;
-  gxe: number;
-  glicko: number;
-  glickodev: number;
+  win: number;
+  lose: number;
 }
 
 const CHAT = new Set(['chat', 'c', 'c:']);
@@ -83,6 +86,7 @@ class Client {
   private lines: { them: number; total: number };
 
   private ok: boolean;
+  private looping: boolean;
 
   constructor(config: Readonly<Config>) {
     this.config = config;
@@ -101,6 +105,7 @@ class Client {
     this.lines = {them: 0, total: 0};
 
     this.ok = false;
+    this.looping = false;
   }
 
   setDeadline(argument: string) {
@@ -116,6 +121,15 @@ class Client {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       this.captureFinalLeaderboard();
     }, +this.deadline - Date.now() - 500);
+  
+    if (!this.looping) {
+      if (+this.getNextOpenTime() < +this.getNextCloseTime()) {
+        this.closeLadder(false);
+      } else {
+        this.openLadder();
+      }
+      this.looping = true;
+    }
   }
 
   async captureFinalLeaderboard() {
@@ -127,6 +141,64 @@ class Client {
     const leaderboard = await this.getLeaderboard();
     this.report(`/addhtmlbox ${this.styleLeaderboard(leaderboard, +now)}`);
     this.deadline = undefined;
+  }
+
+  async openLadder() {
+    this.report(`/laddertour open ${this.format}`);
+    if (Date.now() >= +this.deadline!) return;
+    setTimeout(() => {
+      this.closeLadderWatcher();
+    }, +this.getNextCloseTime() - Date.now() - 500);
+  }
+
+  async closeLadder(decay: boolean = true) {
+    this.report(`/laddertour close ${this.format}`);
+    setTimeout(() => {
+      this.openLadderWatcher();
+    }, +this.getNextOpenTime() - Date.now() - 500);
+    if (decay) this.report(`/laddertour decay ${this.format}`); 
+  }
+
+  async openLadderWatcher() {
+    if (Date.now() < +this.getNextOpenTime()) {
+      process.nextTick(this.openLadderWatcher.bind(this));
+      return;
+    }
+    this.openLadder();
+  }
+
+  async closeLadderWatcher() {
+    if (Date.now() < +this.getNextCloseTime()) {
+      process.nextTick(this.closeLadderWatcher.bind(this));
+      return;
+    }
+    this.closeLadder();
+  }
+
+  getNextOpenTime(): Date {
+    const now = new Date();
+    const openTime = new Date();
+    const [hours, minutes] = this.config.open.split(':');
+    openTime.setHours(parseInt(hours));
+    openTime.setMinutes(parseInt(minutes));
+    openTime.setSeconds(0);
+    if (+now > +openTime) {
+      openTime.setDate(openTime.getDate() + 1);
+    }
+    return openTime;
+  }
+
+  getNextCloseTime(): Date {
+    const now = new Date();
+    const closeTime = new Date();
+    const [hours, minutes] = this.config.close.split(':');
+    closeTime.setHours(parseInt(hours));
+    closeTime.setMinutes(parseInt(minutes));
+    closeTime.setSeconds(0);
+    if (+now > +closeTime) {
+      closeTime.setDate(closeTime.getDate() + 1);
+    }
+    return closeTime;
   }
 
   connect() {
@@ -280,7 +352,7 @@ class Client {
     this.lines.total++;
     const message = parts.slice(4).join('|');
     const authed = AUTH.has(user.charAt(0)) || toID(user) === 'pre';
-    const voiced = user.charAt(0) === '+';
+    const voiced = !authed; // user.charAt(0) === '+';
     if (message.charAt(0) === TOKEN && (authed || voiced)) {
       console.info(`[${HHMMSS()}] ${user}: ${message.trim()}`);
 
@@ -318,7 +390,7 @@ class Client {
           this.leaderboard.last = undefined;
         }
         this.report(`**Prefix:** ${this.prefix}`);
-        this.send(`/laddertour prefix ${this.prefix}`);
+        this.report(`/laddertour prefix ${this.prefix}`);
         return;
       case 'elo':
       case 'rating':
@@ -402,22 +474,22 @@ class Client {
   }
 
   async getLeaderboard(display?: boolean) {
-    const url = `https://pokemonshowdown.com/ladder/${this.format}.json`;
+    const ladderpath = `${this.config.serverpath}/config/ladders/${this.format}.tsv`;
     const leaderboard: LeaderboardEntry[] = [];
     try {
-      const response = await http.get(url);
+      const rows = fs.readFileSync(ladderpath, 'utf8').split('\n').map(row => row.split('\t')).filter(row => row.length >= 4);
       this.leaderboard.lookup = new Map();
-      for (const data of response.data.toplist) {
+      for (const data of rows) {
         // TODO: move the rounding until later
         const entry: LeaderboardEntry = {
-          name: data.username,
-          elo: Math.round(data.elo),
-          gxe: data.gxe,
-          glicko: Math.round(data.rpr),
-          glickodev: Math.round(data.rprd),
+          name: data[1],
+          elo: Math.round(parseFloat(data[0])),
+          win: parseInt(data[2]),
+          lose: parseInt(data[3]),
         };
-        this.leaderboard.lookup.set(data.userid, entry);
-        if (!data.userid.startsWith(this.prefix)) continue;
+        const userid = toID(data[1]);
+        this.leaderboard.lookup.set(userid, entry);
+        if (!userid.startsWith(this.prefix)) continue;
         entry.rank = leaderboard.length + 1;
         leaderboard.push(entry);
       }
@@ -449,8 +521,8 @@ class Client {
     buf +=
       '<div class="ladder" style="max-height: 250px; overflow-y: auto"><table>' +
       '<tr><th></th><th>Name</th><th><abbr title="Elo rating">Elo</abbr></th>' +
-      '<th><abbr title="user\'s percentage chance of winning a random battle (aka GLIXARE)">GXE</abbr></th>' +
-      '<th><abbr title="Glicko-1 rating system: rating±deviation (provisional if deviation>100)">Glicko-1</abbr></th></tr>';
+      '<th><abbr title="user\'s wins">Win</abbr></th>' +
+      '<th><abbr title="user\'s loses">Lose</abbr></th></tr>';
     for (const [i, p] of leaderboard.entries()) {
       const id = toID(p.name);
       const {h, s, l} = hsl(id);
@@ -467,8 +539,7 @@ class Client {
       buf +=
         `<tr><td style="text-align: right"><a href='${link}' class="subtle">${rank}</a></td>` +
         `<td><strong class="username" style="color: hsl(${h},${s}%,${l}%)">${p.name}</strong></td>` +
-        `<td><strong>${p.elo}</strong></td><td>${p.gxe.toFixed(1)}%</td>` +
-        `<td>${p.glicko} ± ${p.glickodev}</td></tr>`;
+        `<td><strong>${p.elo}</strong></td><td>${p.win}</td><td>${p.lose}</td></tr>`;
     }
     buf += '</table></div></center>';
     return buf;

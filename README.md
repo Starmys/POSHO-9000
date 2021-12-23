@@ -15,6 +15,7 @@ $ npm start # requires config.json to be set up
   "server": "sim.smogon.com",
   "serverport": "8000",
   "serverid": "showdown",
+  "serverpath": "../Pokemon-Showdown",
 
   "nickname": "OLTBot",
   "password": "password",
@@ -22,7 +23,10 @@ $ npm start # requires config.json to be set up
 
   "format": "gen7ou",
   "prefix": "LT63RB",
-  "rating": 1500
+  "rating": 1500,
+
+  "open": "10:00",
+  "close": "23:59"
 }
 ```
 
