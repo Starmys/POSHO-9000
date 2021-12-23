@@ -318,6 +318,7 @@ class Client {
           this.leaderboard.last = undefined;
         }
         this.report(`**Prefix:** ${this.prefix}`);
+        this.send(`/laddertour prefix ${this.prefix}`);
         return;
       case 'elo':
       case 'rating':
