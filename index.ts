@@ -101,6 +101,7 @@ class Client {
 
   private ok: boolean;
   private looping: boolean;
+  private ladderopen: boolean;
 
   constructor(config: Readonly<Config>) {
     this.config = config;
@@ -110,7 +111,6 @@ class Client {
     this.format = toID(config.format);
     this.prefix = toID(config.prefix);
     this.rating = config.rating || 0;
-    if (config.deadline) this.setDeadline(config.deadline);
 
     this.users = new Set();
     this.leaderboard = {lookup: new Map()};
@@ -120,8 +120,12 @@ class Client {
 
     this.ok = false;
     this.looping = false;
+    this.ladderopen = true;
 
-    this.watchTop();
+    setTimeout(() => {
+      if (config.deadline) this.setDeadline(config.deadline);
+      this.watchTop();
+    }, 60000);
   }
 
   setDeadline(argument: string) {
@@ -160,6 +164,7 @@ class Client {
   }
 
   async openLadder() {
+    this.ladderopen = true;
     this.report(`/laddertour open ${this.format}`);
     if (Date.now() >= +this.deadline!) {
       this.looping = false;
@@ -171,6 +176,7 @@ class Client {
   }
 
   async closeLadder(decay: boolean = true) {
+    this.ladderopen = false;
     this.report(`/laddertour close ${this.format}`);
     setTimeout(() => {
       this.openLadderWatcher();
@@ -642,7 +648,9 @@ class Client {
     if (tops.prefix !== this.prefix) tops = this.newTopLog();
     const userid = toID(username);
     if (userid === tops.currenttop) {
-      tops.logs[userid].ticks++;
+      if (this.ladderopen) {
+        tops.logs[userid].ticks++;
+      }
       if (lose > tops.logs[userid].currentstat.lose) {
         tops.logs[userid].continuouswin = 0;
       } else {
@@ -690,11 +698,16 @@ class Client {
 
   styleTopBoard(tops: topLog): string {
     if (!tops.currenttop) return '还没有选手参与本轮天梯赛';
-    const header = ['选手', '登顶时刻', '登顶时长', '登顶后连胜数']
+    const header = ['选手', '登顶时刻', '登顶时长', '登顶后胜场']
     const formatDuration = (ticks: number) => `${Math.floor(ticks / 60)}小时${ticks % 60}分钟`;
     const getRow = (userid: string) => {
       const userLog = tops.logs[userid];
-      return [userLog.username, userLog.starttime, formatDuration(userLog.ticks), userLog.continuouswin.toString()];
+      return [
+        userLog.username,
+        userLog.starttime,
+        formatDuration(userLog.ticks),
+        (userLog.currentstat.win - userLog.originalstat.win).toString()
+      ];
     }
     let buf = '<center><div class="ladder" style="max-height: 250px; overflow-y: auto">';
     buf += '<p><b>目前榜首</b></p>';
@@ -844,9 +857,9 @@ function formatTimeRemaining(ms: number, round?: boolean): string {
   }
 
   const time = [];
-  if (h > 0) time.push(`${h} hour${h === 1 ? '' : 's'}`);
-  if (m > 0) time.push(`${m} minute${m === 1 ? '' : 's'}`);
-  if (s > 0) time.push(`${s} second${s === 1 ? '' : 's'}`);
+  if (h > 0) time.push(`${h} 小时`);
+  if (m > 0) time.push(`${m} 分钟`);
+  if (s > 0) time.push(`${s} 秒`);
   return time.join(' ');
 }
 
