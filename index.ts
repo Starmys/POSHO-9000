@@ -16,6 +16,20 @@ const TOKEN = '.';
 const ROOT = path.resolve(__dirname, '..');
 
 type ID = '' | string & { __isID: true };
+type topLog = {
+  'prefix': string,
+  'currenttop': string,
+  'logs': {
+    [userid: string]: {
+      'username': string,
+      'currentstat': {'win': number, 'lose': number},
+      'originalstat': {'win': number, 'lose': number},
+      'continuouswin': number,
+      'starttime': string,
+      'ticks': number
+    }
+  }
+};
 
 interface Config {
   server: string;
@@ -106,6 +120,8 @@ class Client {
 
     this.ok = false;
     this.looping = false;
+
+    this.watchTop();
   }
 
   setDeadline(argument: string) {
@@ -145,7 +161,10 @@ class Client {
 
   async openLadder() {
     this.report(`/laddertour open ${this.format}`);
-    if (Date.now() >= +this.deadline!) return;
+    if (Date.now() >= +this.deadline!) {
+      this.looping = false;
+      return;
+    }
     setTimeout(() => {
       this.closeLadderWatcher();
     }, +this.getNextCloseTime() - Date.now() - 500);
@@ -280,7 +299,7 @@ class Client {
       if (!this.tracking(battle, rating) || (skipid && skipid >= roomid)) continue;
 
       const style = (p: string) => this.stylePlayer(p);
-      const msg = `Battle started between ${style(battle.p1)} and ${style(battle.p2)}`;
+      const msg = `${style(battle.p1)} 和 ${style(battle.p2)} 的战斗开始了!`;
       this.report(`/addhtmlbox <a href="/${roomid}" class="ilink">${msg}. ${rmsg}</a>`);
       if (!this.lastid || this.lastid < roomid) this.lastid = roomid;
     }
@@ -292,12 +311,12 @@ class Client {
     if (p1 && p2) return this.averageRating(p1.elo, p2.elo);
     if (p1 && p1.elo > battle.minElo) return this.averageRating(p1.elo, battle.minElo);
     if (p2 && p2.elo > battle.minElo) return this.averageRating(p2.elo, battle.minElo);
-    return [battle.minElo, `(min rating: ${battle.minElo})`];
+    return [battle.minElo, `(最低分: ${battle.minElo})`];
   }
 
   averageRating(a: number, b: number): [number, string] {
     const rating = Math.round((a + b) / 2);
-    return [rating, `(avg rating: ${rating})`];
+    return [rating, `(平均分: ${rating})`];
   }
 
   stylePlayer(player: string) {
@@ -341,9 +360,9 @@ class Client {
 
   getDeadline(now: Date) {
     if (!this.deadline) {
-      this.report('No deadline has been set.');
+      this.report('还未设置本轮比赛的结束时间');
     } else {
-      this.report(`**Time Remaining:** ${formatTimeRemaining(+this.deadline - +now, true)}`);
+      this.report(`**剩余时间:** ${formatTimeRemaining(+this.deadline - +now, true)}`);
     }
   }
   onChat(parts: string[]) {
@@ -373,7 +392,7 @@ class Client {
             this.getLeaderboard(true);
           } else {
             const c = '``.' + command + '``';
-            this.report(`${c} has been used too recently given activity, please try again later.`);
+            this.report(`天梯读取函数冷却中，请稍候再试`);
           }
         } else if (['remaining', 'deadline'].includes(command)) {
           this.getDeadline(now);
@@ -389,7 +408,7 @@ class Client {
           this.leaderboard.current = undefined;
           this.leaderboard.last = undefined;
         }
-        this.report(`**Prefix:** ${this.prefix}`);
+        this.report(`**前缀:** ${this.prefix}`);
         this.report(`/laddertour prefix ${this.prefix}`);
         return;
       case 'elo':
@@ -399,7 +418,7 @@ class Client {
           this.rating = rating;
           this.report(`/status ${this.rating}`);
         }
-        this.report(`**Rating:** ${this.rating}`);
+        this.report(`**显示分数下限:** ${this.rating}`);
         return;
       case 'add':
       case 'track':
@@ -444,6 +463,10 @@ class Client {
       case 'hidediffs':
         this.showdiffs = false;
         return;
+      case 'tops':
+      case 'no1':
+        this.showTopBoard();
+        return;
       case 'remaining':
       case 'deadline':
         if (argument) this.setDeadline(argument);
@@ -465,11 +488,10 @@ class Client {
 
   tracked() {
     if (!this.users.size) {
-      this.report('Not currently tracking any users.');
+      this.report('目前没有追踪任何用户');
     } else {
       const users = Array.from(this.users.values()).join(', ');
-      const plural = this.users.size === 1 ? 'user' : 'users';
-      this.report(`Currently tracking **${this.users.size}** ${plural}: ${users}`);
+      this.report(`正在追踪用户: ${users}`);
     }
   }
 
@@ -501,7 +523,7 @@ class Client {
       }
     } catch (err) {
       console.error(err);
-      if (display) this.report(`Unable to fetch the leaderboard for ${this.prefix}.`);
+      if (display) this.report(`天梯读取失败`);
     }
 
     return leaderboard;
@@ -515,14 +537,14 @@ class Client {
     let buf = '<center>';
     if (final) {
       buf +=
-        `<h1 style="margin-bottom: 0.2em">Final Leaderboard - ${this.prefix}</h1>` +
+        `<h1 style="margin-bottom: 0.2em">最终榜单 - ${this.prefix}</h1>` +
         `<div style="margin-bottom: 1em"><small><em>${final}</em></small></div>`;
     }
     buf +=
       '<div class="ladder" style="max-height: 250px; overflow-y: auto"><table>' +
-      '<tr><th></th><th>Name</th><th><abbr title="Elo rating">Elo</abbr></th>' +
-      '<th><abbr title="user\'s wins">Win</abbr></th>' +
-      '<th><abbr title="user\'s loses">Lose</abbr></th></tr>';
+      '<tr><th></th><th>选手</th><th><abbr title="Elo rating">天梯分数</abbr></th>' +
+      '<th><abbr title="win">胜场</abbr></th>' +
+      '<th><abbr title="lose">负场</abbr></th></tr>';
     for (const [i, p] of leaderboard.entries()) {
       const id = toID(p.name);
       const {h, s, l} = hsl(id);
@@ -598,6 +620,103 @@ class Client {
     }
 
     if (display) this.report(messages.join(' '));
+  }
+
+  async watchTop() {
+    setTimeout(() => { this.watchTop(); }, 60000);
+    const now = new Date();
+    if (!this.deadline || +now >= +this.deadline) return;
+    let leaderboard: LeaderboardEntry[];
+    if (this.leaderboard.current && (+now - +(this.cooldown || 0) > 10000)) {
+      leaderboard = this.leaderboard.current;
+    } else {
+      leaderboard = await this.getLeaderboard();
+    }
+    if (leaderboard.length > 0) {
+      this.updateTopLog(leaderboard[0].name, leaderboard[0].win, leaderboard[0].lose, now)
+    }
+  }
+
+  updateTopLog(username: string, win: number, lose: number, date: Date) {
+    let tops = this.getTopLog();
+    if (tops.prefix !== this.prefix) tops = this.newTopLog();
+    const userid = toID(username);
+    if (userid === tops.currenttop) {
+      tops.logs[userid].ticks++;
+      if (lose > tops.logs[userid].currentstat.lose) {
+        tops.logs[userid].continuouswin = 0;
+      } else {
+        tops.logs[userid].continuouswin += win - tops.logs[userid].currentstat.win;
+      }
+      tops.logs[userid].currentstat = {'win': win, 'lose': lose};
+    } else {
+      tops.currenttop = userid;
+      tops.logs[userid] = {
+        'username': username,
+        'currentstat': {'win': win, 'lose': lose},
+        'originalstat': {'win': win, 'lose': lose},
+        'continuouswin': 0,
+        'starttime': this.formatDateTime(date),
+        'ticks': 1
+      }
+    }
+    this.saveTopLog(tops);
+  }
+
+  getTopLog(): topLog {
+    let tops: topLog;
+    if (fs.existsSync('tops.json')) {
+      tops = JSON.parse(fs.readFileSync('tops.json', 'utf8'));
+    } else {
+      tops = this.newTopLog();
+    }
+    return tops;
+  }
+
+  saveTopLog(tops: topLog) {
+    fs.writeFileSync('tops.json', JSON.stringify(tops));
+  }
+
+  newTopLog(): topLog {
+    return {'prefix': this.prefix, 'currenttop': '', 'logs': {}};
+  }
+
+  formatDateTime(date: Date): string {
+    const zfill = (s: string | number) => ('0' + s).slice(-2);
+    const dateStr = `${date.getFullYear()}-${zfill(date.getMonth())}-${zfill(date.getDate())}`;
+    const timeStr = `${zfill(date.getHours())}:${zfill(date.getMinutes())}`;
+    return `${dateStr} ${timeStr}`;
+  }
+
+  styleTopBoard(tops: topLog): string {
+    if (!tops.currenttop) return '还没有选手参与本轮天梯赛';
+    const header = ['选手', '登顶时刻', '登顶时长', '登顶后连胜数']
+    const formatDuration = (ticks: number) => `${Math.floor(ticks / 60)}小时${ticks % 60}分钟`;
+    const getRow = (userid: string) => {
+      const userLog = tops.logs[userid];
+      return [userLog.username, userLog.starttime, formatDuration(userLog.ticks), userLog.continuouswin.toString()];
+    }
+    let buf = '<center><div class="ladder" style="max-height: 250px; overflow-y: auto">';
+    buf += '<p><b>目前榜首</b></p>';
+    buf += this.styleTable(header, [getRow(tops.currenttop)]);
+    buf += '<p><b>历任榜首</b></p>';
+    buf += this.styleTable(header, Object.keys(tops.logs).map(getRow));
+    buf += '</div></center>'
+    return buf;
+  }
+
+  styleTableRow(cols: string[], bold: boolean = false) {
+    const tag = bold ? 'th' : 'td';
+    const data = cols.map(x => `<${tag}>${x}</${tag}>`).join('');
+    return `<tr>${data}</tr>`;
+  }
+
+  styleTable(header: string[], rows: string[][]): string {
+    return `<table>${this.styleTableRow(header, true)}${rows.map(row => this.styleTableRow(row))}</table>`;
+  }
+
+  showTopBoard() {
+    this.report(`/addhtmlbox ${this.styleTopBoard(this.getTopLog())}`)
   }
 
   start() {

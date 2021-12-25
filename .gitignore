@@ -4,3 +4,4 @@ package-lock.json
 config.json
 .tsbuildinfo
 .eslintcache
+tops.json
