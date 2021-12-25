@@ -691,7 +691,7 @@ class Client {
 
   formatDateTime(date: Date): string {
     const zfill = (s: string | number) => ('0' + s).slice(-2);
-    const dateStr = `${date.getFullYear()}-${zfill(date.getMonth())}-${zfill(date.getDate())}`;
+    const dateStr = `${date.getFullYear()}-${zfill(date.getMonth() + 1)}-${zfill(date.getDate())}`;
     const timeStr = `${zfill(date.getHours())}:${zfill(date.getMinutes())}`;
     return `${dateStr} ${timeStr}`;
   }
