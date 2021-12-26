@@ -306,7 +306,7 @@ class Client {
 
       const style = (p: string) => this.stylePlayer(p);
       const msg = `${style(battle.p1)} 和 ${style(battle.p2)} 的战斗开始了!`;
-      this.report(`/addhtmlbox <a href="/${roomid}" class="ilink">${msg}. ${rmsg}</a>`);
+      this.report(`/addhtmlbox <a href="/${roomid}" class="ilink">${msg} ${rmsg}</a>`);
       if (!this.lastid || this.lastid < roomid) this.lastid = roomid;
     }
   }
@@ -357,11 +357,7 @@ class Client {
 
   leaderboardCooldown(now: Date) {
     if (!this.cooldown) return true;
-    const wait = Math.floor((+now - +this.cooldown) / MINUTE);
-    const lines = this.changed ? this.lines.them : this.lines.total;
-    if (lines < 5 && wait < 3) return false;
-    const factor = this.changed ? 6 : 1;
-    return factor * (wait + lines) >= 60;
+    return +now - +this.cooldown >= MINUTE;
   }
 
   getDeadline(now: Date) {
@@ -397,11 +393,17 @@ class Client {
             // eslint-disable-next-line @typescript-eslint/no-floating-promises
             this.getLeaderboard(true);
           } else {
-            const c = '``.' + command + '``';
             this.report(`天梯读取函数冷却中，请稍候再试`);
           }
         } else if (['remaining', 'deadline'].includes(command)) {
           this.getDeadline(now);
+        } else if (['no1', 'tops'].includes(command)) {
+          if (this.leaderboardCooldown(now)) {
+            this.cooldown = now;
+            this.showTopBoard();
+          } else {
+            this.report(`天梯读取函数冷却中，请稍候再试`);
+          }
         }
         return;
       }
@@ -713,7 +715,9 @@ class Client {
     buf += '<p><b>目前榜首</b></p>';
     buf += this.styleTable(header, [getRow(tops.currenttop)]);
     buf += '<p><b>历任榜首</b></p>';
-    buf += this.styleTable(header, Object.keys(tops.logs).map(getRow));
+    buf += this.styleTable(header, Object.keys(tops.logs).sort(
+      (a, b) => +new Date(tops.logs[b].starttime) - +new Date(tops.logs[a].starttime)
+    ).map(getRow));
     buf += '</div></center>'
     return buf;
   }
@@ -725,7 +729,7 @@ class Client {
   }
 
   styleTable(header: string[], rows: string[][]): string {
-    return `<table>${this.styleTableRow(header, true)}${rows.map(row => this.styleTableRow(row))}</table>`;
+    return `<table>${this.styleTableRow(header, true)}${rows.map(row => this.styleTableRow(row)).join('')}</table>`;
   }
 
   showTopBoard() {
