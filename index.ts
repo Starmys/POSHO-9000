@@ -667,7 +667,7 @@ class Client {
         'originalstat': {'win': win, 'lose': lose},
         'continuouswin': 0,
         'starttime': this.formatDateTime(date),
-        'ticks': 1
+        'ticks': tops.logs[userid] ? (tops.logs[userid].ticks + 1) : 1
       }
     }
     this.saveTopLog(tops);
@@ -700,7 +700,7 @@ class Client {
 
   styleTopBoard(tops: topLog): string {
     if (!tops.currenttop) return '还没有选手参与本轮天梯赛';
-    const header = ['选手', '登顶时刻', '登顶时长', '登顶后胜场']
+    const header = ['选手', '登顶时刻', '登顶总时长', '登顶后胜场']
     const formatDuration = (ticks: number) => `${Math.floor(ticks / 60)}小时${ticks % 60}分钟`;
     const getRow = (userid: string) => {
       const userLog = tops.logs[userid];
