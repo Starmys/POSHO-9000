@@ -122,10 +122,7 @@ class Client {
     this.looping = false;
     this.ladderopen = true;
 
-    setTimeout(() => {
-      if (config.deadline) this.setDeadline(config.deadline);
-      this.watchTop();
-    }, 60000);
+    this.watchTop();
   }
 
   setDeadline(argument: string) {
@@ -246,8 +243,12 @@ class Client {
   }
 
   onConnectionFailure(error?: Error | number) {
-    console.error('Error occured (%s), will attempt to reconnect in a minute', error);
+    if (!this.ok) return;
     this.ok = false;
+    if (this.started) clearInterval(this.started);
+    this.started = undefined;
+
+    console.error('Error occured (%s), will attempt to reconnect in a minute', error);
 
     setTimeout(this.connect.bind(this), MINUTE);
   }
@@ -415,9 +416,9 @@ class Client {
           this.prefix = prefix;
           this.leaderboard.current = undefined;
           this.leaderboard.last = undefined;
+          this.report(`/laddertour prefix ${this.prefix}`);
         }
         this.report(`**前缀:** ${this.prefix}`);
-        this.report(`/laddertour prefix ${this.prefix}`);
         return;
       case 'elo':
       case 'rating':
@@ -739,6 +740,9 @@ class Client {
   start() {
     if (this.started) return;
 
+    if (this.config.deadline) this.setDeadline(this.config.deadline);
+    this.report(`/laddertour prefix ${this.prefix}`);
+
     this.report(`/status ${this.rating}`);
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     this.started = setInterval(async () => {
@@ -751,6 +755,8 @@ class Client {
       if (this.leaderboard) this.trackChanges(leaderboard, this.showdiffs);
       this.leaderboard.current = leaderboard;
     }, INTERVAL);
+
+    console.info('Ladder tour initialized');
   }
 
   stop() {
