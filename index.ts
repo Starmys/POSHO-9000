@@ -705,8 +705,9 @@ class Client {
     const formatDuration = (ticks: number) => `${Math.floor(ticks / 60)}小时${ticks % 60}分钟`;
     const getRow = (userid: string) => {
       const userLog = tops.logs[userid];
+      const {h, s, l} = hsl(toID(userLog.username));
       return [
-        userLog.username,
+        `<strong class="username" style="color: hsl(${h},${s}%,${l}%)">${userLog.username}</strong>`,
         userLog.starttime,
         formatDuration(userLog.ticks),
         (userLog.currentstat.win - userLog.originalstat.win).toString()
